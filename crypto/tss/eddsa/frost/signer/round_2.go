@@ -87,6 +87,9 @@ func (p *round2) Finalize(logger log.Logger) (types.Handler, error) {
 			return nil, ErrVerifyFailure
 		}
 	}
-	p.s = s
+	p.s = s.Mod(s, p.curveN)
+	if p.s.Cmp(big0) == 0 {
+		return nil, ErrTrivialSignature
+	}
 	return nil, nil
 }

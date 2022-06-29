@@ -27,7 +27,6 @@ import (
 	"github.com/getamis/alice/crypto/homo"
 	"github.com/getamis/alice/crypto/tss/ecdsa/cggmp"
 	"github.com/getamis/alice/crypto/utils"
-	"github.com/getamis/alice/crypto/zkproof"
 	"github.com/getamis/alice/internal/message/types"
 	"github.com/getamis/sirius/log"
 	"github.com/golang/protobuf/ptypes/any"
@@ -35,18 +34,21 @@ import (
 
 const (
 	// maxRetry defines the max retries to generate proof
-	maxRetry = 100
+	maxRetry = 300
 )
 
 var (
 	bit254 = new(big.Int).Lsh(big.NewInt(1), 253)
+	big0   = big.NewInt(0)
 
 	//ErrExceedMaxRetry is returned if we retried over times
 	ErrExceedMaxRetry = errors.New("exceed max retries")
 	//ErrVerifyFailure is returned if the verification is failure.
 	ErrVerifyFailure = errors.New("the verification is failure")
-
+	//ErrPeerNotFound is returned if peer message not found.
 	ErrPeerNotFound = errors.New("peer message not found")
+	//ErrTrivialSignature is returned if obtain trivial signature.
+	ErrTrivialSignature = errors.New("obtain trivial signature")
 )
 
 type pubkeyData struct {
@@ -118,11 +120,8 @@ func newRound1(pubKey *ecpointgrouplaw.ECPoint, peerManager types.PeerManager, t
 	if err != nil {
 		return nil, err
 	}
-	Y, err := zkproof.NewBaseSchorrMessage(curve, share)
-	if err != nil {
-		return nil, err
-	}
-	YPoint, err := Y.V.ToPoint()
+	YPoint := ecpointgrouplaw.ScalarBaseMult(curve, share)
+	msgY, err := YPoint.ToEcPointMessage()
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +134,7 @@ func newRound1(pubKey *ecpointgrouplaw.ECPoint, peerManager types.PeerManager, t
 			Round1: &BodyRound1{
 				D:  msgD,
 				E:  msgE,
-				SG: Y,
+				SG: msgY,
 			},
 		},
 	}
@@ -207,7 +206,6 @@ func (p *round1) HandleMessage(logger log.Logger, message types.Message) error {
 
 func (p *round1) Finalize(logger log.Logger) (types.Handler, error) {
 	// Build B/c/R
-	G := ecpointgrouplaw.NewBase(p.pubKey.GetCurve())
 	identify := ecpointgrouplaw.NewIdentity(p.pubKey.GetCurve())
 	R := identify.Copy()
 	var B []byte
@@ -216,12 +214,7 @@ func (p *round1) Finalize(logger log.Logger) (types.Handler, error) {
 	for _, node := range nodes {
 		msgBody := node.GetMessage(types.MessageType(Type_Round1)).(*Message).GetRound1()
 		x := node.bk.GetX().Bytes()
-		err := msgBody.SG.Verify(G)
-		if err != nil {
-			logger.Debug("Failed ot Verify", "err", err)
-			return nil, err
-		}
-		tempsG, err := msgBody.SG.GetV().ToPoint()
+		tempsG, err := msgBody.SG.ToPoint()
 		if err != nil {
 			logger.Debug("Failed ot ToPoint", "err", err)
 			return nil, err
@@ -250,6 +243,9 @@ func (p *round1) Finalize(logger log.Logger) (types.Handler, error) {
 			logger.Debug("Failed ot Add", "err", err)
 			return nil, err
 		}
+	}
+	if R.Equal(identify) {
+		return nil, ErrTrivialSignature
 	}
 	p.c = SHAPoints(p.pubKey, R, p.message)
 	p.r = R
@@ -316,6 +312,9 @@ func ecpointEncoding(pt *ecpointgrouplaw.ECPoint) *[32]byte {
 		for i := 0; i < len(tempX); i++ {
 			index := len(tempX) - 1 - i
 			X[index] = tempX[i]
+		}
+		for i := 0; i < len(tempY); i++ {
+			index := len(tempY) - 1 - i
 			Y[index] = tempY[i]
 		}
 	}
@@ -358,9 +357,10 @@ func computeElli(x []byte, E *ecpointgrouplaw.ECPoint, message []byte, B []byte,
 		return nil, err
 	}
 	tempMod := new(big.Int).Mod(temp, bit254)
-	if tempMod.Cmp(fieldOrder) > 0 {
+	if tempMod.Cmp(fieldOrder) >= 0 {
+		upBd := maxRetry - 2
 		for j := 0; j < maxRetry; j++ {
-			if j == maxRetry {
+			if j > upBd {
 				return nil, ErrExceedMaxRetry
 			}
 			temp, err = utils.HashProtosToInt(temp.Bytes(), &any.Any{
