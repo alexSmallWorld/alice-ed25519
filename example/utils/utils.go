@@ -42,6 +42,11 @@ func GetCurve() elliptic.Curve {
 	// For simplicity, we use S256 curve.
 	return elliptic.Secp256k1()
 }
+// GetCurve returns the curve we used in this example.
+func GetED25519Curve() elliptic.Curve {
+	// For simplicity, we use S256 curve.
+	return elliptic.Ed25519()
+}
 
 // ConvertDKGResult converts DKG result from config.
 func ConvertDKGResult(cfgPubkey config.Pubkey, cfgShare string, cfgBKs map[string]config.BK) (*dkg.Result, error) {

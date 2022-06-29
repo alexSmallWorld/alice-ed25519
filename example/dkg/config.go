@@ -14,13 +14,15 @@
 package dkg
 
 import (
+	"encoding/hex"
 	"fmt"
-	"io/ioutil"
-
+	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/getamis/alice/crypto/tss/dkg"
 	"github.com/getamis/alice/example/config"
 	"github.com/getamis/sirius/log"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"os"
 )
 
 type DKGConfig struct {
@@ -70,9 +72,25 @@ func writeDKGResult(id string, result *dkg.Result) error {
 		log.Error("Cannot write YAML file", "err", err)
 		return err
 	}
+	// Build public key.
+	pubkey := edwards.NewPublicKey(edwards.Edwards(), result.PublicKey.GetX(), result.PublicKey.GetY())
+	log.Info("dkg result", "publickey", hex.EncodeToString(pubkey.Serialize()), "Share", result.Share.String())
+	writePublicKey2File(hex.EncodeToString(pubkey.Serialize()), id)
 	return nil
 }
 
 func getFilePath(id string) string {
 	return fmt.Sprintf("dkg/%s-ed25519-output.yaml", id)
+}
+
+func writePublicKey2File(str, id string) {
+	userFile := fmt.Sprintf("dkg/publicKey-%s.txt", id)
+	fout, err := os.Create(userFile)
+	defer fout.Close()
+	if err != nil {
+		log.Info("writePublicKey2File failed", userFile, err)
+		return
+	}
+	fout.WriteString(str + "\n")
+	log.Info("writePublicKey2File success", userFile, str)
 }

@@ -119,7 +119,7 @@ func (p *service) OnStateChanged(oldState types.MainState, newState types.MainSt
 			}
 			pubkey := edwards.NewPublicKey(edwards.Edwards(), x, y)
 			ret := ed25519.Verify(pubkey.Serialize(), []byte(p.config.Message), *sigBytes)
-			log.Info("verify ", "result", ret, "sigBytes", hex.EncodeToString(*sigBytes), "\n", "\n")
+			log.Info("verify ", "result", ret, "sigBytes", hex.EncodeToString(*sigBytes), "publickey", hex.EncodeToString(pubkey.Serialize()))
 		} else {
 			log.Warn("Failed to get result from signer", "err", err)
 		}

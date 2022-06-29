@@ -1,6 +1,6 @@
 num=$1
 echo $num
-rm -rf logs/*.log
+rm -rf logs/signer.*.log
 
 for i in $(seq 1 $num)
 do
